@@ -1,0 +1,25 @@
+
+ext {
+    deployDir = 'Makanism'
+}
+
+task setup {
+    IncludedBuild base = gradle.includedBuild('Makanism')
+    dependsOn(base.task(':moveMainJar'))
+    shouldRunAfter(base.task(':moveMainJar'))
+
+    copy {
+        from "${base.projectDir}/extern.gradle"
+        into rootDir
+    }
+    apply from: 'extern.gradle'
+
+    doLast {
+        println "Deleting old files..."
+        delete {
+           delete "$rootDir/$deployDir/$outputLibDir"
+        }
+        println "Moving from ${base.projectDir}/${outputDir}..."
+        ant.move(file: "${base.projectDir}/${outputDir}", toFile: "$rootDir/$deployDir")
+    }
+}

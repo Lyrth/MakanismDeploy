@@ -1,0 +1,9 @@
+
+rootProject.name = 'MakanismDeploy'
+
+// TODO if folder doesn't exist, git clone
+includeBuild('../Makanism') {
+    dependencySubstitution {
+        substitute module('lyrth.makanism:Makanism') with project(':')
+    }
+}
