@@ -1,0 +1,26 @@
+#!bin/bash
+
+TERMHEIGHT=30
+TERMWIDTH=150
+
+die () {
+    echo "\$*"
+    exit 1
+}
+
+# set terminal size
+printf '\\033[8;`echo \$TERMHEIGHT`;`echo \$TERMWIDTH`t'
+resize -s \$TERMHEIGHT \$TERMWIDTH
+stty rows \$TERMHEIGHT
+stty cols \$TERMWIDTH
+
+which java >/dev/null 2>&1 || die "java not found! Make sure it's installed."
+
+# JARNAME=${applicationName}.jar
+JAVAPATH=`which java`
+JAVAARGS=${defaultJvmOpts}
+
+# remove quotes
+eval set -- \$JAVAARGS
+
+screen -d -m \$JAVAPATH \$@ ${mainClassName}

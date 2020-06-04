@@ -1,4 +1,8 @@
 
+plugins {
+    id 'application'
+}
+
 ext {
     deployDir = 'Makanism'
 }
@@ -22,4 +26,23 @@ task setup {
         println "Moving from ${base.projectDir}/${outputDir}..."
         ant.move(file: "${base.projectDir}/${outputDir}", toFile: "$rootDir/$deployDir")
     }
+}
+
+task createStartScripts(type: CreateStartScripts) {
+    IncludedBuild base = gradle.includedBuild('Makanism')
+    outputs.upToDateWhen { false }      // never skip
+    copy {
+        from "${base.projectDir}/extern.gradle"
+        into rootDir
+    }
+    apply from: 'extern.gradle'
+
+    defaultJvmOpts = ["-Xmx200M", "-Xms200M", "-cp $outputLibDir", "-p .;$outputLibDir", "--add-modules java.se,ALL-MODULE-PATH --add-opens java.base/java.lang=net.sf.cglib --add-opens java.base/java.lang=ALL-UNNAMED -Dlog4j.skipJansi=false"]
+    outputDir = file("$rootDir/$deployDir")
+    mainClass.set(bot_main_class)
+    mainModule.set(bot_main_package)
+    applicationName = bot_name
+
+    unixStartScriptGenerator.template = resources.text.fromFile("$rootDir/resources/unix_template.txt")
+    windowsStartScriptGenerator.template = resources.text.fromFile("$rootDir/resources/windows_template.txt")
 }
