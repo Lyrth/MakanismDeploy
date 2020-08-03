@@ -5,7 +5,11 @@
 build
 
 # Exclude, since it should be copied from the main project
+dependencies.gradle
 extern.gradle
 
 # Exclude default output directory
 Makanism
+
+# Exclude log files
+*.log

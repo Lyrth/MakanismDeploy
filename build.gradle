@@ -7,16 +7,31 @@ ext {
     deployDir = 'Makanism'
 }
 
+copy {
+    IncludedBuild base = gradle.includedBuild('Makanism')
+    from "${base.projectDir}/dependencies.gradle"
+    from "${base.projectDir}/extern.gradle"
+    into rootDir
+}
+apply from: 'dependencies.gradle'
+apply from: 'extern.gradle'
+
+dependencies {
+    gradle.ext.modules.forEach { String module ->
+        println "Adding module $module"
+        implementation project(module)
+    }
+}
+
+jar.enabled = false     // disable jar creation for root project
+
+distZip.enabled = false
+distTar.enabled = false
+
 task setup {
     IncludedBuild base = gradle.includedBuild('Makanism')
-    dependsOn(base.task(':moveMainJar'))
-    shouldRunAfter(base.task(':moveMainJar'))
-
-    copy {
-        from "${base.projectDir}/extern.gradle"
-        into rootDir
-    }
-    apply from: 'extern.gradle'
+    dependsOn build, base.task(':moveMainJar')
+    shouldRunAfter build, base.task(':moveMainJar')
 
     doLast {
         println "Deleting old files..."
@@ -39,8 +54,8 @@ task createStartScripts(type: CreateStartScripts) {
 
     defaultJvmOpts = ["-Xmx200M", "-Xms200M", "-cp $outputLibDir", "-p .;$outputLibDir", "--add-modules java.se,ALL-MODULE-PATH --add-opens java.base/java.lang=net.sf.cglib --add-opens java.base/java.lang=ALL-UNNAMED -Dlog4j.skipJansi=false"]
     outputDir = file("$rootDir/$deployDir")
-    mainClass.set(bot_main_class)
-    mainModule.set(bot_main_package)
+    mainClass.set(bot_main_class as String)
+    mainModule.set(bot_main_package as String)
     applicationName = bot_name
 
     unixStartScriptGenerator.template = resources.text.fromFile("$rootDir/resources/unix_template.txt")

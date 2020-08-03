@@ -1,9 +1,21 @@
 
 rootProject.name = 'MakanismDeploy'
 
+def MODULE_PROJECTS_PATH = "$rootDir/../MakanismModules"
+
+gradle.ext.modules = new ArrayList<String>()
+
 // TODO if folder doesn't exist, git clone
 includeBuild('../Makanism') {
     dependencySubstitution {
         substitute module('lyrth.makanism:Makanism') with project(':')
+        substitute module('lyrth.makanism:Makanism.api') with project(':api')
     }
+}
+
+new File(MODULE_PROJECTS_PATH).eachDir {
+    println "Including module $it.name..."
+    include ":$it.name"
+    project(":$it.name").projectDir = it
+    gradle.ext.modules.add(":$it.name")
 }
