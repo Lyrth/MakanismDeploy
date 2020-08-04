@@ -1,6 +1,7 @@
 
 plugins {
     id 'application'
+    id 'com.github.johnrengelman.shadow' version '6.0.0' apply false
 }
 
 ext {
@@ -18,9 +19,31 @@ apply from: 'extern.gradle'
 
 dependencies {
     gradle.ext.modules.forEach { String module ->
-        println "Adding module $module"
         implementation project(module)
     }
+}
+
+subprojects {
+    apply plugin: 'com.github.johnrengelman.shadow'
+
+    configurations {
+        extern
+        compile.extendsFrom extern
+    }
+
+    shadowJar {
+        dependsOn jar
+        shouldRunAfter jar
+        exclude 'module-info.class'
+        configurations = [project.configurations.extern]
+    }
+
+    task relocateAll(type: com.github.jengelman.gradle.plugins.shadow.tasks.ConfigureShadowRelocation) {
+        target = tasks.shadowJar
+        prefix = "deps_$project.name".replace('-','_')
+    }
+
+    tasks.shadowJar.dependsOn tasks.relocateAll
 }
 
 jar.enabled = false     // disable jar creation for root project

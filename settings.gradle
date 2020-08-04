@@ -14,8 +14,9 @@ includeBuild('../Makanism') {
 }
 
 new File(MODULE_PROJECTS_PATH).eachDir {
-    println "Including module $it.name..."
-    include ":$it.name"
-    project(":$it.name").projectDir = it
-    gradle.ext.modules.add(":$it.name")
+    String moduleName = it.name.replaceAll('[^\\w-]','_')
+    println "Including module $moduleName..."
+    include ":$moduleName"
+    project(":$moduleName").projectDir = it
+    gradle.ext.modules.add(":$moduleName")
 }
