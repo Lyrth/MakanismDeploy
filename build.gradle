@@ -23,6 +23,66 @@ dependencies {
     }
 }
 
+class ServiceFileCreator extends DefaultTask {
+    private String provides
+    private Map<String, String> serviceProviders = [:]
+
+    @TaskAction
+    def execute(){
+        // TODO : Use build dir to check for update
+        Closure config = {
+            metaInf {
+                getServiceProviders().each { service, content ->
+                    File file = File.createTempFile("_service_$service", '.tmp').with(true) {
+                        it.deleteOnExit()
+                        it.write content
+                    }
+                    from(file) {
+                        into "services"
+                        rename { service }
+                    }
+                }
+            }
+        }
+
+        this.project.tasks.jar.configure config
+        this.project.tasks.shadowJar.configure config
+    }
+
+    def getServiceProviders(){
+        return serviceProviders
+    }
+
+    /**
+     * The class path of the service interface that is implemented
+     * @param clazz Class path of the service interface that is implemented
+     * @return this
+     */
+    @Input
+    ServiceFileCreator provides(String clazz){
+        Objects.requireNonNull(clazz)
+        this.provides = clazz
+        return this
+    }
+
+    /**
+     * The class path of the service provider
+     * @param clazz Class path of the service provider
+     * @return this
+     */
+    @Input
+    ServiceFileCreator with(String clazz){
+        if (this.provides){
+            if (!this.serviceProviders[this.provides])
+                this.serviceProviders[this.provides] = clazz + '\n'
+            else
+                this.serviceProviders[this.provides] = this.serviceProviders[this.provides] + clazz + '\n'
+            this.provides = null
+        }
+        return this
+    }
+}
+
 subprojects {
     apply plugin: 'com.github.johnrengelman.shadow'
 
@@ -32,18 +92,22 @@ subprojects {
     }
 
     shadowJar {
-        dependsOn jar
-        shouldRunAfter jar
         exclude 'module-info.class'
         configurations = [project.configurations.extern]
+        destinationDir = file("$rootProject.projectDir/$deployDir/modules")
     }
 
     task relocateAll(type: com.github.jengelman.gradle.plugins.shadow.tasks.ConfigureShadowRelocation) {
+        dependsOn tasks.jar
         target = tasks.shadowJar
         prefix = "deps_$project.name".replace('-','_')
     }
 
-    tasks.shadowJar.dependsOn tasks.relocateAll
+    tasks.shadowJar.dependsOn tasks.relocateAll, tasks.jar
+    rootProject.tasks.build.dependsOn tasks.shadowJar
+
+    task services(type: ServiceFileCreator)
+    tasks.jar.dependsOn tasks.services
 }
 
 jar.enabled = false     // disable jar creation for root project
@@ -57,28 +121,29 @@ task setup {
     shouldRunAfter build, base.task(':moveMainJar')
 
     doLast {
+        String deploy = "$rootDir/$deployDir"
+        println "Creating folders..."
+        mkdir "$deploy"
+        mkdir "$deploy/config"
+        mkdir "$deploy/lib"
+        mkdir "$deploy/modules"
+
         println "Deleting old files..."
         delete {
-           delete "$rootDir/$deployDir/$outputLibDir"
+           delete "$deploy/$outputLibDir"
         }
-        println "Moving from ${base.projectDir}/${outputDir}..."
-        ant.move(file: "${base.projectDir}/${outputDir}", toFile: "$rootDir/$deployDir")
+        println "Moving from $base.projectDir/$outputDir..."
+        ant.move(file: "$base.projectDir/$outputDir", toFile: "$deploy")
     }
 }
 
 task createStartScripts(type: CreateStartScripts) {
     IncludedBuild base = gradle.includedBuild('Makanism')
     outputs.upToDateWhen { false }      // never skip
-    copy {
-        from "${base.projectDir}/extern.gradle"
-        into rootDir
-    }
-    apply from: 'extern.gradle'
 
-    defaultJvmOpts = ["-Xmx200M", "-Xms200M", "-cp $outputLibDir", "-p .;$outputLibDir", "--add-modules java.se,ALL-MODULE-PATH --add-opens java.base/java.lang=net.sf.cglib --add-opens java.base/java.lang=ALL-UNNAMED -Dlog4j.skipJansi=false"]
+    defaultJvmOpts = ["-Xmx200M", "-Xms200M", "-cp Makanism.jar;modules/*", "-Dlog4j.skipJansi=false"]
     outputDir = file("$rootDir/$deployDir")
     mainClass.set(bot_main_class as String)
-    mainModule.set(bot_main_package as String)
     applicationName = bot_name
 
     unixStartScriptGenerator.template = resources.text.fromFile("$rootDir/resources/unix_template.txt")
