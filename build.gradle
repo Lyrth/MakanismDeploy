@@ -68,10 +68,9 @@ class ServiceFileCreator extends DefaultTask {
     /**
      * The class path of the service provider
      * @param clazz Class path of the service provider
-     * @return this
      */
     @Input
-    ServiceFileCreator with(String clazz){
+    void with(String clazz){
         if (this.provides){
             if (!this.serviceProviders[this.provides])
                 this.serviceProviders[this.provides] = clazz + '\n'
@@ -79,7 +78,6 @@ class ServiceFileCreator extends DefaultTask {
                 this.serviceProviders[this.provides] = this.serviceProviders[this.provides] + clazz + '\n'
             this.provides = null
         }
-        return this
     }
 }
 
@@ -98,16 +96,15 @@ subprojects {
     }
 
     task relocateAll(type: com.github.jengelman.gradle.plugins.shadow.tasks.ConfigureShadowRelocation) {
-        dependsOn tasks.jar
+        dependsOn tasks.classes
         target = tasks.shadowJar
         prefix = "deps_$project.name".replace('-','_')
     }
 
-    tasks.shadowJar.dependsOn tasks.relocateAll, tasks.jar
-    rootProject.tasks.build.dependsOn tasks.shadowJar
-
     task services(type: ServiceFileCreator)
-    tasks.jar.dependsOn tasks.services
+
+    tasks.shadowJar.dependsOn tasks.relocateAll, tasks.classes, tasks.services
+    rootProject.tasks.build.dependsOn tasks.shadowJar
 }
 
 jar.enabled = false     // disable jar creation for root project
@@ -117,8 +114,8 @@ distTar.enabled = false
 
 task setup {
     IncludedBuild base = gradle.includedBuild('Makanism')
-    dependsOn build, base.task(':moveMainJar')
-    shouldRunAfter build, base.task(':moveMainJar')
+    dependsOn build, base.task(':buildOutput')
+    shouldRunAfter build, base.task(':buildOutput')
 
     doLast {
         String deploy = "$rootDir/$deployDir"
@@ -132,13 +129,16 @@ task setup {
         delete {
            delete "$deploy/$outputLibDir"
         }
-        println "Moving from $base.projectDir/$outputDir..."
-        ant.move(file: "$base.projectDir/$outputDir", toFile: "$deploy")
+        println "Copying from $base.projectDir/$outputDir..."
+        //ant.move(file: "$base.projectDir/$outputDir", toFile: "$deploy")
+        copy {
+            from "$base.projectDir/$outputDir"
+            into deploy
+        }
     }
 }
 
 task createStartScripts(type: CreateStartScripts) {
-    IncludedBuild base = gradle.includedBuild('Makanism')
     outputs.upToDateWhen { false }      // never skip
 
     defaultJvmOpts = ["-Xmx200M", "-Xms200M", "-cp Makanism.jar;modules/*", "-Dlog4j.skipJansi=false"]
