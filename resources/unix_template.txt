@@ -1,7 +1,8 @@
 #!bin/bash
+clear
 
-TERMHEIGHT=30
-TERMWIDTH=150
+# TERMHEIGHT=30
+# TERMWIDTH=150
 
 die () {
     echo "\$*"
@@ -9,10 +10,10 @@ die () {
 }
 
 # set terminal size
-printf '\\033[8;`echo \$TERMHEIGHT`;`echo \$TERMWIDTH`t'
-resize -s \$TERMHEIGHT \$TERMWIDTH
-stty rows \$TERMHEIGHT
-stty cols \$TERMWIDTH
+# printf '\\033[8;`echo \$TERMHEIGHT`;`echo \$TERMWIDTH`t'
+# resize -s \$TERMHEIGHT \$TERMWIDTH
+# stty rows \$TERMHEIGHT
+# stty cols \$TERMWIDTH
 
 which java >/dev/null 2>&1 || die "java not found! Make sure it's installed."
 

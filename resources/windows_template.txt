@@ -1,9 +1,10 @@
 
 @echo off
+cls
 
-set TERMWIDTH=150
+rem set TERMWIDTH=150
 
-mode con: cols=%TERMWIDTH% lines=3000
+rem mode con: cols=%TERMWIDTH% lines=3000
 
 java -version >NUL 2>&1
 if "%ERRORLEVEL%" == "0" goto start
