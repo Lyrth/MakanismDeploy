@@ -1,3 +1,5 @@
+import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
+import java.util.jar.JarFile
 
 plugins {
     id 'application'
@@ -24,33 +26,29 @@ dependencies {
 }
 
 class ServiceFileCreator extends DefaultTask {
+
+    @Input
+    int cacheHash = -1
+
+    @OutputDirectory
+    File generatedFilesDir = project.file("$project.buildDir/generated/services")
+
     private String provides
-    private Map<String, String> serviceProviders = [:]
+    protected Map<String, String> serviceProviders = [:]
+
+    Jar target
 
     @TaskAction
     def execute(){
-        // TODO : Use build dir to check for update
-        Closure config = {
-            metaInf {
-                getServiceProviders().each { service, content ->
-                    File file = File.createTempFile("_service_$service", '.tmp').with(true) {
-                        it.deleteOnExit()
-                        it.write content
-                    }
-                    from(file) {
-                        into "services"
-                        rename { service }
-                    }
+        this.target.metaInf {
+            serviceProviders.each { service, content ->
+                File file = new File(this.generatedFilesDir, service)
+                file.text = content
+                from(file) {
+                    into "services"
                 }
             }
         }
-
-        this.project.tasks.jar.configure config
-        this.project.tasks.shadowJar.configure config
-    }
-
-    def getServiceProviders(){
-        return serviceProviders
     }
 
     /**
@@ -62,6 +60,7 @@ class ServiceFileCreator extends DefaultTask {
     ServiceFileCreator provides(String clazz){
         Objects.requireNonNull(clazz)
         this.provides = clazz
+        cacheHash = Objects.hash(cacheHash, clazz)
         return this
     }
 
@@ -72,6 +71,7 @@ class ServiceFileCreator extends DefaultTask {
     @Input
     void with(String clazz){
         if (this.provides){
+            cacheHash = Objects.hash(cacheHash, clazz)
             if (!this.serviceProviders[this.provides])
                 this.serviceProviders[this.provides] = clazz + '\n'
             else
@@ -89,22 +89,92 @@ subprojects {
         compile.extendsFrom extern
     }
 
-    shadowJar {
-        exclude 'module-info.class'
-        configurations = [project.configurations.extern]
-        destinationDir = file("$rootProject.projectDir/$deployDir/modules")
+    def packages = [] as Set<String>
+    task searchExternPackages {
+        onlyIf { packages.empty }
+        doFirst {
+            // do it without setting configuration property
+            // so dependencies won't get included in the jar
+            project.configurations.extern.files.each { jar ->
+                JarFile jf = new JarFile(jar)
+                jf.entries().each { entry ->
+                    if (entry.name.endsWith(".class")) {
+                        packages << entry.name[0..entry.name.lastIndexOf('/') - 1].replaceAll('/', '.')
+                    }
+                }
+                jf.close()
+            }
+        }
     }
 
-    task relocateAll(type: com.github.jengelman.gradle.plugins.shadow.tasks.ConfigureShadowRelocation) {
-        dependsOn tasks.classes
-        target = tasks.shadowJar
-        prefix = "deps_$project.name".replace('-','_')
+    task moduleJar(type: ShadowJar) {
+        dependsOn tasks.classes, tasks.searchExternPackages
+        inputs.files(sourceSets.main.output)
+
+        def depShadePrefix = "deps_$project.name".replace('-','_')
+        afterEvaluate {
+            def deployDir = rootProject.ext.deployDir
+            def libName = project.name
+            def libVersion = DEFAULT_VERSION == project.version ? 'unversioned' : project.version
+            def libExtension = 'jar'
+
+            def libFileName = "$libName-$libVersion.$libExtension"
+            def destDir = "$rootProject.projectDir/$deployDir/modules"
+
+            archiveFileName = libFileName
+            destinationDirectory = file(destDir)
+
+            delete fileTree(destDir) {
+                include "$libName-*.$libExtension"
+                exclude libFileName
+            }
+            outputs.file("$destDir/$libFileName")
+        }
+        doFirst {
+            from(sourceSets.main.output)
+            exclude 'module-info.class'
+            packages.each {
+                relocate(it, "${depShadePrefix}.${it}")
+            }
+        }
     }
 
-    task services(type: ServiceFileCreator)
+    task services(type: ServiceFileCreator){
+        outputs.upToDateWhen { false }
+        doFirst {
+            target = tasks.moduleJar as Jar
+        }
+    }
 
-    tasks.shadowJar.dependsOn tasks.relocateAll, tasks.classes, tasks.services
-    rootProject.tasks.build.dependsOn tasks.shadowJar
+    tasks.moduleJar.dependsOn tasks.services
+
+    // NOTE: Dependency-provided services is currently broken until ShadowJar supports service file relocation
+    task depsJar(type: ShadowJar) {
+        dependsOn tasks.searchExternPackages
+
+        def depShadePrefix = "deps_$project.name".replace('-', '_')
+        afterEvaluate {
+            def deployDir = rootProject.ext.deployDir
+            def libName = project.name
+            def libExtension = 'jar'
+
+            def libFileName = "$libName-deps.$libExtension"
+            def destDir = "$rootProject.projectDir/$deployDir/modules/lib"
+
+            archiveFileName = libFileName
+            destinationDirectory = file(destDir)
+
+            inputs.files(project.configurations.extern)
+            outputs.file("$destDir/$libFileName")
+        }
+        doFirst {
+            configurations = [project.configurations.extern]
+            exclude 'module-info.class'
+            packages.each {
+                relocate(it, "${depShadePrefix}.${it}")
+            }
+        }
+    }
 }
 
 jar.enabled = false     // disable jar creation for root project
@@ -112,25 +182,27 @@ jar.enabled = false     // disable jar creation for root project
 distZip.enabled = false
 distTar.enabled = false
 
-task setup {
+task buildBase {
+    String deploy = "$rootDir/$project.ext.deployDir"
+    mkdir "$deploy"
+    mkdir "$deploy/$outputLibDir"
+    mkdir "$deploy/config"
+
     IncludedBuild base = gradle.includedBuild('Makanism')
-    dependsOn build, base.task(':buildOutput')
-    shouldRunAfter build, base.task(':buildOutput')
+    dependsOn base.task(':buildOutput')
+    shouldRunAfter base.task(':buildOutput')
+
+    inputs .dir("$base.projectDir/$outputDir/$outputLibDir")
+    inputs .file("$base.projectDir/$outputDir/$bot_archive_name")
+    outputs.dir("$deploy/$outputLibDir")
+    outputs.file("$deploy/$bot_archive_name")
 
     doLast {
-        String deploy = "$rootDir/$deployDir"
-        println "Creating folders..."
-        mkdir "$deploy"
-        mkdir "$deploy/config"
-        mkdir "$deploy/lib"
-        mkdir "$deploy/modules"
-
         println "Deleting old files..."
         delete {
            delete "$deploy/$outputLibDir"
         }
         println "Copying from $base.projectDir/$outputDir..."
-        //ant.move(file: "$base.projectDir/$outputDir", toFile: "$deploy")
         copy {
             from "$base.projectDir/$outputDir"
             into deploy
@@ -138,10 +210,28 @@ task setup {
     }
 }
 
+task buildModules {
+    shouldRunAfter tasks.buildBase
+    String modulesDir = "$rootDir/$project.ext.deployDir/modules"
+    mkdir modulesDir
+    mkdir "$modulesDir/lib"
+
+    inputs .dir(modulesDir)
+    outputs.dir(modulesDir)
+
+    subprojects.each {
+        dependsOn it.tasks.depsJar, it.tasks.moduleJar
+    }
+}
+
+task setup {
+    dependsOn tasks.buildModules, tasks.buildBase
+}
+
 task createStartScripts(type: CreateStartScripts) {
     outputs.upToDateWhen { false }      // never skip
 
-    defaultJvmOpts = ["-Xmx200M", "-Xms200M", "-cp Makanism.jar;modules/*", "-Dlog4j.skipJansi=false"]
+    defaultJvmOpts = ["-Xmx200M", "-Xms200M", "-cp Makanism.jar;modules/*;modules/lib/*", "-Dlog4j.skipJansi=false"]
     outputDir = file("$rootDir/$deployDir")
     mainClass.set(bot_main_class as String)
     applicationName = bot_name

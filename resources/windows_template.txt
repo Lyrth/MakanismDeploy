@@ -18,3 +18,4 @@ set JAVAARGS=<% print(defaultJvmOpts.replace('"','')) %>
 java %JAVAARGS% ${mainClassName}
 
 pause
+exit

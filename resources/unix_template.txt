@@ -24,3 +24,4 @@ JAVAARGS=${defaultJvmOpts}
 eval set -- \$JAVAARGS
 
 screen -d -m \$JAVAPATH \$@ ${mainClassName}
+exit

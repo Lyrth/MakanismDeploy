@@ -3,13 +3,14 @@
 
 # Ignore Gradle build output directory
 build
+build/**
 
 # Exclude, since it should be copied from the main project
 dependencies.gradle
 extern.gradle
 
 # Exclude default output directory
-Makanism
+Makanism/**
 
 # Exclude log files
 *.log
