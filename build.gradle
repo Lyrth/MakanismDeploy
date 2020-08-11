@@ -224,14 +224,31 @@ task buildModules {
     }
 }
 
+task buildModulesOnly {
+    String modulesDir = "$rootDir/$project.ext.deployDir/modules"
+    mkdir modulesDir
+    mkdir "$modulesDir/lib"
+
+    inputs .dir(modulesDir)
+    outputs.dir(modulesDir)
+
+    subprojects.each {
+        dependsOn it.tasks.moduleJar
+    }
+}
+
 task setup {
     dependsOn tasks.buildModules, tasks.buildBase
+}
+
+task setupWithoutDepsJars {
+    dependsOn tasks.buildModulesOnly, tasks.buildBase
 }
 
 task createStartScripts(type: CreateStartScripts) {
     outputs.upToDateWhen { false }      // never skip
 
-    defaultJvmOpts = ["-Xmx200M", "-Xms200M", "-cp Makanism.jar;modules/*;modules/lib/*", "-Dlog4j.skipJansi=false"]
+    defaultJvmOpts = ["-Xmx200M", "-Xms200M", "-cp Makanism.jar;modules/lib/*", "-Dlog4j.skipJansi=false"]
     outputDir = file("$rootDir/$deployDir")
     mainClass.set(bot_main_class as String)
     applicationName = bot_name
