@@ -1,10 +1,12 @@
-import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
-import java.util.jar.JarFile
-
 plugins {
     id 'application'
-    id 'com.github.johnrengelman.shadow' version '6.0.0' apply false
+    // Already defined in buildSrc, no version
+    id 'com.github.johnrengelman.shadow' apply false
 }
+
+import com.github.jengelman.gradle.plugins.shadow.relocation.RelocateClassContext
+import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
+import java.util.jar.JarFile
 
 ext {
     deployDir = 'Makanism'
@@ -22,62 +24,6 @@ apply from: 'extern.gradle'
 dependencies {
     gradle.ext.modules.forEach { String module ->
         implementation project(module)
-    }
-}
-
-class ServiceFileCreator extends DefaultTask {
-
-    @Input
-    int cacheHash = -1
-
-    @OutputDirectory
-    File generatedFilesDir = project.file("$project.buildDir/generated/services")
-
-    private String provides
-    protected Map<String, String> serviceProviders = [:]
-
-    Jar target
-
-    @TaskAction
-    def execute(){
-        this.target.metaInf {
-            serviceProviders.each { service, content ->
-                File file = new File(this.generatedFilesDir, service)
-                file.text = content
-                from(file) {
-                    into "services"
-                }
-            }
-        }
-    }
-
-    /**
-     * The class path of the service interface that is implemented
-     * @param clazz Class path of the service interface that is implemented
-     * @return this
-     */
-    @Input
-    ServiceFileCreator provides(String clazz){
-        Objects.requireNonNull(clazz)
-        this.provides = clazz
-        cacheHash = Objects.hash(cacheHash, clazz)
-        return this
-    }
-
-    /**
-     * The class path of the service provider
-     * @param clazz Class path of the service provider
-     */
-    @Input
-    void with(String clazz){
-        if (this.provides){
-            cacheHash = Objects.hash(cacheHash, clazz)
-            if (!this.serviceProviders[this.provides])
-                this.serviceProviders[this.provides] = clazz + '\n'
-            else
-                this.serviceProviders[this.provides] = this.serviceProviders[this.provides] + clazz + '\n'
-            this.provides = null
-        }
     }
 }
 
@@ -148,9 +94,21 @@ subprojects {
 
     tasks.moduleJar.dependsOn tasks.services
 
-    // NOTE: Dependency-provided services is currently broken until ShadowJar supports service file relocation
     task depsJar(type: ShadowJar) {
         dependsOn tasks.searchExternPackages
+        mergeServiceFiles()
+        transform(PropertiesValuesTransformer.class) {
+            valueTransformer = { v ->
+                String relocated = v
+                relocators.each { rel ->
+                    if (rel.canRelocateClass(v)) {
+                        def vContext = RelocateClassContext.builder().className(v).stats(stats).build()
+                        relocated = rel.relocateClass(vContext)
+                    }
+                }
+                return relocated
+            }
+        }
 
         def depShadePrefix = "deps_$project.name".replace('-', '_')
         afterEvaluate {
